@@ -46,14 +46,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       chunksRef.current = [];
       setIsMicrophoneEnabled(enableMicrophone);
 
-      // Request screen capture (without system audio to avoid conflicts)
       const displayMedia = await navigator.mediaDevices.getDisplayMedia({
         video: {
-          mediaSource: 'screen' as MediaTrackConstraints['mediaSource'],
           width: { ideal: 1920 },
-          height: { ideal: 1080 },
+          height: { ideal: 1080 }
         },
-        audio: false, // We'll handle microphone separately
+        audio: false
       });
 
       // Request microphone access if enabled
@@ -67,7 +65,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
               sampleRate: 44100,
             },
           });
-          // Store the audio track reference for toggling
+
           if (audioStream.getAudioTracks().length > 0) {
             audioTrackRef.current = audioStream.getAudioTracks()[0];
           }
@@ -89,10 +87,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       // Create MediaRecorder with WebM codec
       const options: MediaRecorderOptions = {
         mimeType: 'video/webm;codecs=vp9,opus',
-        videoBitsPerSecond: 2500000, // 2.5 Mbps
+        videoBitsPerSecond: 2500000,
       };
 
-      // Fallback to default if vp9 not supported
       if (!MediaRecorder.isTypeSupported(options.mimeType!)) {
         options.mimeType = 'video/webm;codecs=vp8,opus';
       }
@@ -103,20 +100,17 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
       const mediaRecorder = new MediaRecorder(combinedStream, options);
       mediaRecorderRef.current = mediaRecorder;
 
-      // Handle data available
       mediaRecorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
           chunksRef.current.push(event.data);
         }
       };
 
-      // Handle recording stop
       mediaRecorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: 'video/webm' });
         setVideoBlob(blob);
         chunksRef.current = [];
 
-        // Stop all tracks
         if (streamRef.current) {
           streamRef.current.getTracks().forEach((track) => track.stop());
           streamRef.current = null;
@@ -124,46 +118,37 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
         audioTrackRef.current = null;
       };
 
-      // Handle errors
-      mediaRecorder.onerror = (event) => {
+      mediaRecorder.onerror = () => {
         setError('Recording error occurred');
-        console.error('MediaRecorder error:', event);
       };
 
-      // Start recording
-      mediaRecorder.start(1000); // Collect data every second
+      mediaRecorder.start(1000);
       setIsRecording(true);
       setIsPaused(false);
+
       startTimeRef.current = Date.now() - pausedTimeRef.current;
       pausedTimeRef.current = 0;
 
-      // Update recording time
       timerRef.current = setInterval(() => {
         if (!isPaused) {
           setRecordingTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
         }
       }, 1000);
 
-      // Handle screen share stop (user clicks stop sharing in browser)
       displayMedia.getVideoTracks()[0].onended = () => {
         stopRecording();
       };
+
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to start recording';
-      setError(errorMessage);
-      console.error('Error starting recording:', err);
+      setError(err instanceof Error ? err.message : 'Failed to start recording');
     }
   }, [isPaused]);
 
-  /**
-   * Stop recording and finalize video blob
-   */
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       setIsPaused(false);
-
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -171,9 +156,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     }
   }, [isRecording]);
 
-  /**
-   * Pause recording
-   */
   const pauseRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording && !isPaused) {
       mediaRecorderRef.current.pause();
@@ -182,9 +164,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     }
   }, [isRecording, isPaused]);
 
-  /**
-   * Resume recording
-   */
   const resumeRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording && isPaused) {
       mediaRecorderRef.current.resume();
@@ -194,9 +173,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     }
   }, [isRecording, isPaused]);
 
-  /**
-   * Reset recording state
-   */
   const resetRecording = useCallback(() => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
@@ -220,24 +196,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     pausedTimeRef.current = 0;
   }, [isRecording]);
 
-  /**
-   * Toggle microphone on/off during recording
-   */
   const toggleMicrophone = useCallback(() => {
-    if (!isRecording || !audioTrackRef.current) {
-      return;
-    }
-
+    if (!isRecording || !audioTrackRef.current) return;
     const audioTrack = audioTrackRef.current;
-    if (audioTrack.enabled) {
-      // Mute microphone
-      audioTrack.enabled = false;
-      setIsMicrophoneEnabled(false);
-    } else {
-      // Unmute microphone
-      audioTrack.enabled = true;
-      setIsMicrophoneEnabled(true);
-    }
+    audioTrack.enabled = !audioTrack.enabled;
+    setIsMicrophoneEnabled(audioTrack.enabled);
   }, [isRecording]);
 
   return {
@@ -255,4 +218,3 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
     toggleMicrophone,
   };
 }
-
